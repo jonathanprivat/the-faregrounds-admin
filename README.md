@@ -1,4 +1,4 @@
-# The Faregrounds — Admin CMS
+# The Fairgrounds — Admin CMS
 
 Static admin panel served at **https://admin.nantucketfairgrounds.com/**.
 
