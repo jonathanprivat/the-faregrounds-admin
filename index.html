@@ -152,6 +152,19 @@
     #menu-tabs { overflow-x: auto; flex-wrap: nowrap !important; white-space: nowrap; scrollbar-width: thin; }
     #menu-tabs > * { flex-shrink: 0; }
   }
+  /* ── Maintenance banner: push fixed chrome down so banner doesn't overlap sidebar/topbar ── */
+  #maintenance-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 70; background: #dc2626; color: #fff; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; cursor: pointer; line-height: 1.35; box-sizing: border-box; }
+  body.has-maint-banner .admin-topbar { top: 34px; }
+  body.has-maint-banner .admin-sidebar { top: 34px; }
+  body.has-maint-banner .admin-main { margin-top: 90px; }
+  body.has-maint-banner .sidebar-overlay { top: 34px; }
+  @media (max-width: 768px) {
+    #maintenance-banner { padding: 7px 12px; font-size: 11px; line-height: 1.3; }
+    body.has-maint-banner .admin-topbar { top: 38px; }
+    body.has-maint-banner .admin-sidebar { top: 94px; }
+    body.has-maint-banner .sidebar-overlay { top: 94px; }
+    body.has-maint-banner .admin-main { margin-top: 94px; }
+  }
 </style>
 </head>
 <body class="min-h-screen">
@@ -1466,18 +1479,38 @@ function renderMaintenanceBanner() {
     if (!banner) {
       banner = document.createElement('div');
       banner.id = 'maintenance-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:60;background:#dc2626;color:white;padding:8px 16px;text-align:center;font-size:13px;font-weight:600;letter-spacing:0.02em;cursor:pointer;';
+      // Styles live in <style> block (#maintenance-banner) so media queries can adjust on mobile.
       banner.onclick = () => showPage('maintenance');
       document.body.appendChild(banner);
-      document.body.style.paddingTop = '34px';
     }
+    document.body.classList.add('has-maint-banner');
     const modeLabel = { coming_soon: 'Coming Soon', maintenance: 'Maintenance', event_landing: 'Event Landing' }[m.mode] || m.mode;
-    banner.innerHTML = `🔒 Public site is in <strong>${modeLabel}</strong> mode — visitors see the placeholder page. Click to manage.`;
+    const isNarrow = window.matchMedia('(max-width: 480px)').matches;
+    banner.innerHTML = isNarrow
+      ? `🔒 <strong>${modeLabel}</strong> mode active. Tap to manage.`
+      : `🔒 Public site is in <strong>${modeLabel}</strong> mode — visitors see the placeholder page. Click to manage.`;
   } else if (banner) {
     banner.remove();
+    document.body.classList.remove('has-maint-banner');
+    // Defensive: clear legacy inline padding from older builds
     document.body.style.paddingTop = '';
   }
 }
+
+// Re-render banner copy on viewport changes (rotate, resize) so the mobile-short
+// vs desktop-long message matches the current width.
+(function attachMaintenanceBannerResize() {
+  let raf = null;
+  window.addEventListener('resize', () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      raf = null;
+      if (typeof DATA !== 'undefined' && DATA && DATA.maintenance && DATA.maintenance.enabled) {
+        renderMaintenanceBanner();
+      }
+    });
+  });
+})();
 
 function renderMaintenance() {
   const container = document.getElementById('maintenance-editor');
