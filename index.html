@@ -240,6 +240,7 @@
       <div class="nav-item" onclick="showPage('theme')">Theme</div>
       <div style="height:1px;background:var(--border);margin:12px 0;"></div>
       <div class="nav-item" onclick="showPage('settings')">Settings</div>
+      <div class="nav-item" onclick="showPage('maintenance')">Maintenance</div>
       <div class="nav-item" onclick="showPage('users')">Users</div>
     </nav>
     <div style="padding:16px 28px;border-top:1px solid var(--border);">
@@ -338,6 +339,15 @@
         <p class="text-sm text-[color:var(--text-muted)]">Contact info, hours, and external links</p>
       </div>
       <div id="settings-editor"></div>
+    </div>
+
+    <!-- Maintenance Mode -->
+    <div data-page="maintenance" class="fade-in">
+      <div class="mb-6">
+        <h3 class="text-lg font-bold text-[color:var(--text)]">Maintenance Mode</h3>
+        <p class="text-sm text-[color:var(--text-muted)]">Take the public site offline behind a Coming Soon, Maintenance, or Event Landing page. The admin panel stays accessible.</p>
+      </div>
+      <div id="maintenance-editor"></div>
     </div>
 
     <!-- Users -->
@@ -691,7 +701,7 @@ function showPage(page) {
   document.querySelectorAll('[data-page]').forEach(el => el.classList.remove('active'));
   document.querySelector(`[data-page="${page}"]`).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const labels = { dashboard: 'Dashboard', menu: 'Menu', events: 'Events', content: 'Content', theme: 'Theme', settings: 'Settings', users: 'Users' };
+  const labels = { dashboard: 'Dashboard', menu: 'Menu', events: 'Events', content: 'Content', theme: 'Theme', settings: 'Settings', maintenance: 'Maintenance Mode', users: 'Users' };
   const idx = Object.keys(labels).indexOf(page);
   document.querySelectorAll('.nav-item')[idx].classList.add('active');
   document.getElementById('page-title').textContent = labels[page] || page;
@@ -758,7 +768,9 @@ function renderAll() {
   renderContent();
   renderTheme();
   renderSettings();
+  renderMaintenance();
   renderUsers();
+  renderMaintenanceBanner();
 }
 
 // ── Dashboard ──
@@ -1421,6 +1433,303 @@ function updateSetting(key, value) {
   DATA.settings[key] = value;
   if (key === 'site_name') applySiteBranding();
   markDirty();
+}
+
+// ── Maintenance Mode ──
+function ensureMaintenance() {
+  if (!DATA.maintenance) {
+    DATA.maintenance = {
+      enabled: false, mode: 'coming_soon', title: 'Coming Soon',
+      subtitle: 'Seasonal food, local gatherings, and fairground energy. Reopening soon at 27 Fairgrounds Road.',
+      eta_text: '', eta_iso: '', show_countdown: false,
+      logo_image: '/images/logo.png', background_image: '',
+      background_color: '#f7f1de', text_color: '#2a2b1f', primary_color: '#4e5420',
+      show_social: true, show_address: true, show_phone: true,
+      contact_email: '', cta_label: '', cta_url: '',
+      preview_token: '', last_enabled_at: '', last_disabled_at: '',
+    };
+  }
+  return DATA.maintenance;
+}
+
+function generatePreviewToken() {
+  // 16 chars of url-safe random
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+function renderMaintenanceBanner() {
+  const m = DATA.maintenance;
+  let banner = document.getElementById('maintenance-banner');
+  if (m && m.enabled) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'maintenance-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:60;background:#dc2626;color:white;padding:8px 16px;text-align:center;font-size:13px;font-weight:600;letter-spacing:0.02em;cursor:pointer;';
+      banner.onclick = () => showPage('maintenance');
+      document.body.appendChild(banner);
+      document.body.style.paddingTop = '34px';
+    }
+    const modeLabel = { coming_soon: 'Coming Soon', maintenance: 'Maintenance', event_landing: 'Event Landing' }[m.mode] || m.mode;
+    banner.innerHTML = `🔒 Public site is in <strong>${modeLabel}</strong> mode — visitors see the placeholder page. Click to manage.`;
+  } else if (banner) {
+    banner.remove();
+    document.body.style.paddingTop = '';
+  }
+}
+
+function renderMaintenance() {
+  const container = document.getElementById('maintenance-editor');
+  if (!container) return;
+  const m = ensureMaintenance();
+  const isOn = !!m.enabled;
+  const previewUrl = m.preview_token ? `${location.origin.replace('admin.', '')}/?preview=${m.preview_token}` : '';
+  const publicUrl = location.origin.replace('admin.', '');
+
+  container.innerHTML = `
+    <!-- Master toggle card -->
+    <div class="card mb-4" style="border-left:4px solid ${isOn ? '#dc2626' : '#16a34a'};">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-2">
+            <div style="width:14px;height:14px;border-radius:50%;background:${isOn ? '#dc2626' : '#16a34a'};box-shadow:0 0 0 4px ${isOn ? '#fee2e2' : '#dcfce7'};"></div>
+            <h4 class="font-bold text-[color:var(--text)] text-base">${isOn ? 'Maintenance ON' : 'Maintenance OFF'}</h4>
+          </div>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            ${isOn ? 'Public visitors see the placeholder page. Search engines see noindex.' : 'Public site is live. Visitors see the normal homepage.'}
+          </p>
+          ${isOn && m.last_enabled_at ? `<p class="text-xs text-[color:var(--text-faint)] mt-1">Enabled ${new Date(m.last_enabled_at).toLocaleString()}</p>` : ''}
+          ${!isOn && m.last_disabled_at ? `<p class="text-xs text-[color:var(--text-faint)] mt-1">Last disabled ${new Date(m.last_disabled_at).toLocaleString()}</p>` : ''}
+        </div>
+        <button onclick="toggleMaintenance()" class="btn ${isOn ? 'btn-danger' : 'btn-primary'}" style="white-space:nowrap;">
+          ${isOn ? 'Turn OFF' : 'Turn ON'}
+        </button>
+      </div>
+    </div>
+
+    <!-- Bypass URL card (only when ON) -->
+    ${isOn && previewUrl ? `
+      <div class="card mb-4" style="background:#fef3cd;border:1px solid #fde68a;">
+        <h4 class="font-bold text-[color:var(--text)] mb-2 text-sm">🔑 Preview Bypass URL</h4>
+        <p class="text-xs text-[color:var(--text-muted)] mb-3">Share this URL to view the live homepage while everyone else sees the placeholder. Token rotates automatically each time you turn maintenance back on.</p>
+        <div class="flex gap-2 items-center">
+          <input id="bypass-url-input" type="text" readonly value="${escHtml(previewUrl)}" class="input flex-1 text-xs" style="font-family:monospace;background:white;" onclick="this.select()" />
+          <button onclick="copyBypassUrl()" class="btn btn-primary text-xs" style="white-space:nowrap;">Copy</button>
+          <a href="${escHtml(previewUrl)}" target="_blank" rel="noopener" class="btn btn-ghost text-xs" style="white-space:nowrap;">Open ↗</a>
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Mode + Templates -->
+    <div class="card mb-4">
+      <h4 class="font-bold text-[color:var(--text)] mb-3">Mode</h4>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        ${[
+          {id: 'coming_soon', label: 'Coming Soon', desc: 'Pre-launch / reopening'},
+          {id: 'maintenance', label: 'Maintenance', desc: 'Brief outage / repairs'},
+          {id: 'event_landing', label: 'Event Landing', desc: 'Single event / RSVP'},
+        ].map(opt => `
+          <div onclick="setMaintenanceMode('${opt.id}')" class="card" style="cursor:pointer;padding:14px;border:2px solid ${m.mode === opt.id ? '#4e5420' : 'var(--border)'};background:${m.mode === opt.id ? '#f7f1de' : 'transparent'};">
+            <div class="font-bold text-sm text-[color:var(--text)]">${opt.label}</div>
+            <div class="text-xs text-[color:var(--text-muted)]">${opt.desc}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="applyMaintenanceTemplate('comingsoon')" class="btn btn-ghost text-xs">Apply: Coming Soon</button>
+        <button onclick="applyMaintenanceTemplate('outage')" class="btn btn-ghost text-xs">Apply: Brief Outage</button>
+        <button onclick="applyMaintenanceTemplate('event')" class="btn btn-ghost text-xs">Apply: Event Landing</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="card mb-4">
+      <h4 class="font-bold text-[color:var(--text)] mb-4">Content</h4>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Headline</label>
+          <input type="text" value="${escHtml(m.title || '')}" oninput="updateMaintenance('title', this.value)" class="input" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Subtitle</label>
+          <textarea oninput="updateMaintenance('subtitle', this.value)" class="input" rows="2">${escHtml(m.subtitle || '')}</textarea>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">ETA Text (e.g. "Reopening Spring 2026")</label>
+          <input type="text" value="${escHtml(m.eta_text || '')}" oninput="updateMaintenance('eta_text', this.value)" class="input" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Countdown Target (ISO datetime)</label>
+          <input type="datetime-local" value="${escHtml((m.eta_iso || '').slice(0,16))}" oninput="updateMaintenance('eta_iso', this.value ? new Date(this.value).toISOString() : '')" class="input" />
+          <label class="flex items-center gap-2 mt-2 text-xs text-[color:var(--text-muted)]">
+            <input type="checkbox" ${m.show_countdown ? 'checked' : ''} onchange="updateMaintenance('show_countdown', this.checked)" />
+            Show live countdown
+          </label>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">CTA Button Label (optional)</label>
+          <input type="text" value="${escHtml(m.cta_label || '')}" oninput="updateMaintenance('cta_label', this.value)" class="input" placeholder="e.g. RSVP" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">CTA URL (optional)</label>
+          <input type="text" value="${escHtml(m.cta_url || '')}" oninput="updateMaintenance('cta_url', this.value)" class="input" placeholder="https://..." />
+        </div>
+      </div>
+    </div>
+
+    <!-- Visuals -->
+    <div class="card mb-4">
+      <h4 class="font-bold text-[color:var(--text)] mb-4">Visuals</h4>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Logo Image URL</label>
+          <input type="text" value="${escHtml(m.logo_image || '')}" oninput="updateMaintenance('logo_image', this.value)" class="input" placeholder="/images/logo.png" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Background Image URL (optional)</label>
+          <input type="text" value="${escHtml(m.background_image || '')}" oninput="updateMaintenance('background_image', this.value)" class="input" placeholder="leave blank for solid color" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Background Color</label>
+          <input type="color" value="${escHtml(m.background_color || '#f7f1de')}" oninput="updateMaintenance('background_color', this.value)" class="input" style="height:42px;" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Text Color</label>
+          <input type="color" value="${escHtml(m.text_color || '#2a2b1f')}" oninput="updateMaintenance('text_color', this.value)" class="input" style="height:42px;" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Accent / Primary Color</label>
+          <input type="color" value="${escHtml(m.primary_color || '#4e5420')}" oninput="updateMaintenance('primary_color', this.value)" class="input" style="height:42px;" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact Bar -->
+    <div class="card mb-4">
+      <h4 class="font-bold text-[color:var(--text)] mb-4">Contact Bar (shown at bottom of placeholder)</h4>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="flex items-center gap-2 text-sm text-[color:var(--text)]">
+          <input type="checkbox" ${m.show_address ? 'checked' : ''} onchange="updateMaintenance('show_address', this.checked)" />
+          Show street address
+        </label>
+        <label class="flex items-center gap-2 text-sm text-[color:var(--text)]">
+          <input type="checkbox" ${m.show_phone ? 'checked' : ''} onchange="updateMaintenance('show_phone', this.checked)" />
+          Show phone number
+        </label>
+        <label class="flex items-center gap-2 text-sm text-[color:var(--text)]">
+          <input type="checkbox" ${m.show_social ? 'checked' : ''} onchange="updateMaintenance('show_social', this.checked)" />
+          Show social media links
+        </label>
+        <div>
+          <label class="text-xs font-medium text-[color:var(--text-muted)] block mb-1">Contact Email (optional, shows below phone)</label>
+          <input type="text" value="${escHtml(m.contact_email || '')}" oninput="updateMaintenance('contact_email', this.value)" class="input" placeholder="hello@nantucketfairgrounds.com" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Preview -->
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-bold text-[color:var(--text)]">Live Preview</h4>
+        <div class="flex gap-2">
+          <a href="${escHtml(publicUrl)}/?preview=__cms_preview__" target="_blank" rel="noopener" class="btn btn-ghost text-xs">Open in new tab ↗</a>
+        </div>
+      </div>
+      <p class="text-xs text-[color:var(--text-muted)] mb-3">
+        ⚠️ Preview reflects what's <strong>currently published</strong> on the live site, not unsaved changes. Click Publish to see edits here.
+      </p>
+      <iframe src="${escHtml(publicUrl)}${m.preview_token ? '/?preview=' + encodeURIComponent(m.preview_token) : '/'}&__cms_preview=1" style="width:100%;height:480px;border:1px solid var(--border);border-radius:8px;background:white;" loading="lazy"></iframe>
+    </div>
+  `;
+}
+
+function updateMaintenance(key, value) {
+  ensureMaintenance();
+  DATA.maintenance[key] = value;
+  markDirty();
+  // Re-render banner so it stays in sync if `enabled` changes via a hot path
+  renderMaintenanceBanner();
+  // Re-render the form when toggling certain checkboxes / mode buttons
+  if (['mode', 'show_countdown'].includes(key)) renderMaintenance();
+}
+
+function setMaintenanceMode(mode) {
+  ensureMaintenance();
+  DATA.maintenance.mode = mode;
+  // Default title swap if it still matches a previous mode's default
+  const defaults = {
+    coming_soon: 'Coming Soon',
+    maintenance: 'Under Maintenance',
+    event_landing: 'Special Event',
+  };
+  const allDefaults = Object.values(defaults);
+  if (allDefaults.includes(DATA.maintenance.title)) {
+    DATA.maintenance.title = defaults[mode];
+  }
+  markDirty();
+  renderMaintenance();
+}
+
+function applyMaintenanceTemplate(template) {
+  ensureMaintenance();
+  const m = DATA.maintenance;
+  if (template === 'comingsoon') {
+    m.mode = 'coming_soon';
+    m.title = 'Coming Soon';
+    m.subtitle = 'Seasonal food, local gatherings, and fairground energy. Reopening soon at 27 Fairgrounds Road.';
+    m.eta_text = '';
+    m.show_countdown = false;
+    m.cta_label = ''; m.cta_url = '';
+  } else if (template === 'outage') {
+    m.mode = 'maintenance';
+    m.title = 'Brief Maintenance';
+    m.subtitle = "We'll be back shortly. Thanks for your patience.";
+    m.eta_text = '';
+    m.show_countdown = false;
+    m.cta_label = ''; m.cta_url = '';
+  } else if (template === 'event') {
+    m.mode = 'event_landing';
+    m.title = 'Special Event';
+    m.subtitle = 'Join us at The Fairgrounds for a one-night-only gathering.';
+    m.show_countdown = true;
+    m.cta_label = 'RSVP'; m.cta_url = '';
+  }
+  markDirty();
+  renderMaintenance();
+  toast(`Template applied — review fields and Publish when ready.`);
+}
+
+function toggleMaintenance() {
+  ensureMaintenance();
+  const m = DATA.maintenance;
+  if (!m.enabled) {
+    // Confirm before turning ON
+    const ok = confirm('Turn maintenance mode ON?\n\nThe public site will show the placeholder page to all visitors.\n\nA fresh preview-bypass URL will be generated so you can still view the live homepage.\n\nChanges are NOT live until you click Publish.');
+    if (!ok) return;
+    m.enabled = true;
+    m.preview_token = generatePreviewToken();
+    m.last_enabled_at = new Date().toISOString();
+    toast('Maintenance ON — click Publish to push live.', '#dc2626');
+  } else {
+    const ok = confirm('Turn maintenance mode OFF?\n\nThe public site will return to normal.\n\nChanges are NOT live until you click Publish.');
+    if (!ok) return;
+    m.enabled = false;
+    m.last_disabled_at = new Date().toISOString();
+    toast('Maintenance OFF — click Publish to push live.', '#16a34a');
+  }
+  markDirty();
+  renderMaintenance();
+  renderMaintenanceBanner();
+}
+
+function copyBypassUrl() {
+  const inp = document.getElementById('bypass-url-input');
+  if (!inp) return;
+  inp.select();
+  navigator.clipboard.writeText(inp.value)
+    .then(() => toast('Bypass URL copied to clipboard'))
+    .catch(() => { document.execCommand('copy'); toast('Bypass URL copied'); });
 }
 
 // ── Users ──
