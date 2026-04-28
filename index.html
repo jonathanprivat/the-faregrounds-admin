@@ -199,9 +199,9 @@
     <!-- Token login -->
     <div id="login-token" class="text-left hidden">
       <div class="mb-4">
-        <label class="field-label">GitHub Personal Access Token</label>
-        <input id="token-input" type="password" class="field-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-        <p class="text-xs text-[color:var(--text-faint)] mt-2">Needs <code style="background:var(--bg-hover);padding:2px 6px;border-radius:4px;">repo</code> scope. <a href="https://github.com/settings/tokens/new?scopes=repo&description=Fairgrounds+CMS" target="_blank" class="text-fg-olive underline">Create one here</a></p>
+        <label class="field-label">Personal Access Token</label>
+        <input id="token-input" type="password" class="field-input" placeholder="Paste your token">
+        <p class="text-xs text-[color:var(--text-faint)] mt-2">Advanced sign-in. Use the username + password fields above unless you've been given a token.</p>
       </div>
       <div class="mb-6">
         <label class="field-label">Repository</label>
@@ -286,7 +286,7 @@
       </div>
       <div class="card">
         <h3 style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">Quick Start</h3>
-        <p class="text-sm text-[color:var(--text-muted)] mb-4">Edit your site content directly from here. Changes are saved to GitHub and auto-deployed.</p>
+        <p class="text-sm text-[color:var(--text-muted)] mb-4">Edit your site content directly from here. Changes are saved and auto-deployed in about a minute.</p>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button onclick="showPage('menu')" class="btn btn-ghost text-sm">Edit Menu</button>
           <button onclick="showPage('events')" class="btn btn-ghost text-sm">Events</button>
@@ -404,7 +404,7 @@ function utf8ToB64(str) {
   return btoa(bin);
 }
 
-// ── GitHub API ──
+// ── Content API ──
 async function ghFetch(endpoint, opts = {}) {
   const url = endpoint.startsWith('http') ? endpoint : `https://api.github.com/repos/${GITHUB_REPO}/${endpoint}`;
   const res = await fetch(url, {
@@ -417,7 +417,7 @@ async function ghFetch(endpoint, opts = {}) {
       ...(opts.headers || {}),
     },
   });
-  if (!res.ok) throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Save failed (HTTP ${res.status}): ${await res.text()}`);
   return res.json();
 }
 
@@ -473,7 +473,7 @@ async function saveSiteData(message) {
   updateSyncStatus();
 }
 
-// ── File Upload to GitHub ──
+// ── File Upload ──
 async function uploadFileToGitHub(filePath, base64Content, message) {
   // Check if file already exists to get its SHA
   let sha;
@@ -562,7 +562,7 @@ async function handlePdfUpload(input) {
   const status = document.getElementById('pdf-upload-status');
   status.textContent = 'Processing PDF...';
   try {
-    // Read file as both base64 (for GitHub upload) and ArrayBuffer (for pdf.js)
+    // Read file as both base64 (for upload) and ArrayBuffer (for pdf.js)
     const pdfB64 = await fileToBase64(file);
     const arrayBuffer = await file.arrayBuffer();
 
@@ -570,7 +570,7 @@ async function handlePdfUpload(input) {
     status.textContent = 'Generating poster image...';
     const jpgB64 = await pdfToJpg(arrayBuffer);
 
-    // Upload both to GitHub
+    // Upload both files
     status.textContent = 'Uploading PDF...';
     await uploadFileToGitHub('public/data/event.pdf', pdfB64, 'Update event PDF via CMS');
 
@@ -751,7 +751,7 @@ async function publishChanges() {
 
   try {
     await saveSiteData('Update site content via CMS admin');
-    toast('Published! GitHub Actions will deploy in ~60s.', '#16a34a');
+    toast('Published! Site will deploy in ~60s.', '#16a34a');
   } catch (err) {
     toast('Publish failed: ' + err.message, '#dc2626');
   } finally {
