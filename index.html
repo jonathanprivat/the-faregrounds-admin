@@ -980,12 +980,47 @@ function renderMenu() {
   const menuData = menu.items || {};
   const container = document.getElementById('menu-editor');
   const cats = Object.keys(menuData);
-  container.innerHTML = cats.map(cat => `
+
+  // Aggregate Toast-link + disabled counts across the active menu so the
+  // admin sees the full picture (and so we can decide whether to surface
+  // the "Disable all non-Toast items" bulk action).
+  let totalReal = 0, linked = 0, unlinked = 0, disabled = 0;
+  cats.forEach(cat => {
+    (menuData[cat] || []).forEach(it => {
+      if (it.sub) return;
+      totalReal++;
+      if (it.toast_id) linked++; else unlinked++;
+      if (it.disabled === true) disabled++;
+    });
+  });
+  const bulkBar = `
+    <div class="card mb-6" style="background:var(--accent-bg); border:1px solid var(--accent-border);">
+      <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:10px;">
+        <div class="flex items-center gap-3" style="flex-wrap:wrap;">
+          <strong class="text-sm text-[color:var(--text)]">${escHtml(menu.label || menu.id)} — Toast Linkage</strong>
+          <span class="text-xs" style="color:var(--text-muted);">${totalReal} items total</span>
+          <span class="text-xs" style="background:var(--ok-halo); color:var(--ok); padding:2px 8px; border-radius:999px; font-weight:600;">✓ ${linked} linked</span>
+          <span class="text-xs" style="background:var(--bg-hover); color:var(--text-muted); padding:2px 8px; border-radius:999px; font-weight:600; border:1px solid var(--border);">${unlinked} local-only</span>
+          ${disabled > 0 ? `<span class="text-xs" style="background:var(--err-halo); color:var(--err); padding:2px 8px; border-radius:999px; font-weight:600;">⊘ ${disabled} disabled</span>` : ''}
+        </div>
+        <div class="flex gap-2">
+          <button onclick="disableAllNonToast()" class="btn btn-ghost text-xs" ${unlinked - disabled > 0 ? '' : 'disabled style="opacity:0.4;cursor:not-allowed;"'} title="Disable every local-only (non-Toast) item in this menu so it stops appearing on the live site">⊘ Disable all non-Toast (${Math.max(0, unlinked - disabled)})</button>
+          <button onclick="enableAllNonToast()" class="btn btn-ghost text-xs" ${disabled > 0 ? '' : 'disabled style="opacity:0.4;cursor:not-allowed;"'} title="Re-enable every disabled item in this menu">✓ Enable all (${disabled})</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const cards = cats.map(cat => {
+    const items = menuData[cat] || [];
+    const catReal = items.filter(it => !it.sub).length;
+    const catLinked = items.filter(it => !it.sub && it.toast_id).length;
+    return `
     <div class="card mb-6">
       <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3" style="flex-wrap:wrap;">
           <h4 class="font-bold text-[color:var(--text)] capitalize text-lg">${escHtml(cat)}</h4>
-          <span class="text-xs text-[color:var(--text-faint)]">${menuData[cat].length} items</span>
+          <span class="text-xs text-[color:var(--text-faint)]">${catReal} items · ${catLinked} Toast-linked</span>
         </div>
         <div class="flex gap-2">
           <button onclick="addMenuItem('${escAttr(cat)}')" class="btn btn-ghost text-xs">+ Add Item</button>
@@ -994,33 +1029,115 @@ function renderMenu() {
         </div>
       </div>
       <div class="space-y-3">
-        ${menuData[cat].map((item, idx) => `
-          <div class="menu-item-row ${item.sub ? 'sub-item' : ''}">
+        ${items.map((item, idx) => {
+          const hasToast = !!item.toast_id;
+          const isDisabled = item.disabled === true;
+          const badge = item.sub
+            ? `<span class="text-xs" style="background:var(--bg-hover); color:var(--text-muted); padding:2px 8px; border-radius:999px; font-weight:600; border:1px solid var(--border);">divider</span>`
+            : hasToast
+              ? `<span class="text-xs" title="Linked to Toast item — name & price drive from Toast on every sync" style="background:var(--ok-halo); color:var(--ok); padding:2px 8px; border-radius:999px; font-weight:600;">✓ Toast</span>`
+              : `<span class="text-xs" title="Not linked to Toast — admin-managed only" style="background:var(--bg-hover); color:var(--text-muted); padding:2px 8px; border-radius:999px; font-weight:600; border:1px solid var(--border);">Local</span>`;
+          const disabledBadge = isDisabled
+            ? `<span class="text-xs" title="Hidden from the live site" style="background:var(--err-halo); color:var(--err); padding:2px 8px; border-radius:999px; font-weight:600;">⊘ Hidden</span>`
+            : '';
+          return `
+          <div class="menu-item-row ${item.sub ? 'sub-item' : ''}" style="${isDisabled ? 'opacity:0.55;' : ''}">
             <div>
-              <input class="field-input text-sm font-semibold" value="${escAttr(item.name)}" onchange="updateMenuItem('${escAttr(cat)}',${idx},'name',this.value)" placeholder="Item name" style="margin-bottom:6px;">
+              <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-wrap:wrap;">${badge}${disabledBadge}</div>
+              <input class="field-input text-sm font-semibold" value="${escAttr(item.name)}" onchange="updateMenuItem('${escAttr(cat)}',${idx},'name',this.value)" placeholder="Item name" style="margin-bottom:6px;" ${hasToast && !item.sub ? 'title="Name is overwritten from Toast on every sync — edit in Toast for permanent changes"' : ''}>
               <textarea class="field-input text-xs" onchange="updateMenuItem('${escAttr(cat)}',${idx},'desc',this.value)" placeholder="Description" style="min-height:50px;">${escHtml(item.desc || '')}</textarea>
             </div>
             <div>
-              <input class="field-input text-sm" value="${escAttr(item.price)}" onchange="updateMenuItem('${escAttr(cat)}',${idx},'price',this.value)" placeholder="Price" style="margin-bottom:6px;">
-              <label class="flex items-center gap-2 text-xs text-[color:var(--text-muted)] cursor-pointer">
-                <input type="checkbox" ${item.sub ? 'checked' : ''} onchange="updateMenuItem('${escAttr(cat)}',${idx},'sub',this.checked)"> Sub-item
+              <input class="field-input text-sm" value="${escAttr(item.price)}" onchange="updateMenuItem('${escAttr(cat)}',${idx},'price',this.value)" placeholder="Price" style="margin-bottom:6px;" ${hasToast && !item.sub ? 'title="Price is overwritten from Toast on every sync"' : ''}>
+              <label class="flex items-center gap-2 text-xs text-[color:var(--text-muted)] cursor-pointer" style="margin-bottom:4px;">
+                <input type="checkbox" ${item.sub ? 'checked' : ''} onchange="updateMenuItem('${escAttr(cat)}',${idx},'sub',this.checked)"> Sub-item (divider)
               </label>
+              ${item.sub ? '' : `
+              <label class="flex items-center gap-2 text-xs cursor-pointer" style="color:${isDisabled ? 'var(--err)' : 'var(--text-muted)'};">
+                <input type="checkbox" ${isDisabled ? 'checked' : ''} onchange="updateMenuItem('${escAttr(cat)}',${idx},'disabled',this.checked)"> Disabled (hide from live site)
+              </label>`}
             </div>
             <button onclick="deleteMenuItem('${escAttr(cat)}',${idx})" class="text-red-400 hover:text-red-600 mt-2" title="Delete">
               <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             </button>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  container.innerHTML = bulkBar + cards;
   renderMenuPdfUpload();
+}
+
+// Bulk action: mark every non-Toast (local-only) item in the active menu
+// as disabled, so the live site filters them out. Idempotent — items already
+// disabled are left alone. Sub-dividers are NEVER touched (they're editorial
+// section breaks, not real menu items).
+function disableAllNonToast() {
+  const menu = getActiveMenu();
+  if (!menu || !menu.items) return;
+  let changed = 0;
+  for (const cat of Object.keys(menu.items)) {
+    const arr = menu.items[cat] || [];
+    for (const it of arr) {
+      if (it.sub) continue;
+      if (it.toast_id) continue;
+      if (it.disabled === true) continue;
+      it.disabled = true;
+      changed++;
+    }
+  }
+  if (changed > 0) {
+    markDirty();
+    renderMenu();
+    alert(`Disabled ${changed} non-Toast item${changed === 1 ? '' : 's'} on ${menu.label || menu.id}.\n\nSave changes to push to the live site.`);
+  }
+}
+
+// Bulk action: re-enable every disabled item in the active menu. Used after
+// "disable all" to undo, or for routine re-enabling.
+function enableAllNonToast() {
+  const menu = getActiveMenu();
+  if (!menu || !menu.items) return;
+  let changed = 0;
+  for (const cat of Object.keys(menu.items)) {
+    const arr = menu.items[cat] || [];
+    for (const it of arr) {
+      if (it.sub) continue;
+      if (it.disabled === true) { delete it.disabled; changed++; }
+    }
+  }
+  if (changed > 0) {
+    markDirty();
+    renderMenu();
+    alert(`Re-enabled ${changed} item${changed === 1 ? '' : 's'} on ${menu.label || menu.id}.\n\nSave changes to push to the live site.`);
+  }
 }
 
 function updateMenuItem(cat, idx, field, value) {
   if (field === 'sub') value = !!value;
-  getActiveMenu().items[cat][idx][field] = value;
+  const item = getActiveMenu().items[cat][idx];
+  if (field === 'disabled') {
+    // Boolean field with omit-when-false convention so site.json stays clean
+    // (matches scripts/sync-toast.js behavior — `disabled: true` is emitted
+    // only when admin explicitly hides the item). Sub-dividers can never be
+    // disabled — the toggle isn't rendered for them, but guard here too.
+    if (item.sub) return;
+    if (value) item.disabled = true; else delete item.disabled;
+    markDirty();
+    renderMenu();
+    return;
+  }
+  if (field === 'sub' && value === true && item.disabled === true) {
+    // Converting a previously-disabled item to a sub-divider — clear the
+    // disabled flag so the divider can render (live site filters disabled
+    // items, sub-dividers shouldn't be filtered by accident).
+    delete item.disabled;
+  }
+  item[field] = value;
   markDirty();
+  if (field === 'sub') renderMenu();
 }
 
 function addMenuItem(cat) {
